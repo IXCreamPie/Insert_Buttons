@@ -1,179 +1,46 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Insert Buttons</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <style>
-    body { font-family: system-ui, monospace; background:#fafafa; padding:12px; }
-    button { cursor:pointer; }
-    .page { background:#fff; border:1px solid #ccc; padding:8px; margin-bottom:8px; }
-  </style>
+<meta charset="UTF-8">
+<title>IX Buttons</title>
+<style>
+body { font-family: Arial; text-align: center; }
+img { width: 180px; border-radius: 12px; }
+a { display:block; margin:10px; padding:12px; background:black; color:white; text-decoration:none; }
+</style>
 </head>
 <body>
 
-<!-- CONTROLS -->
-<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
-  <button onclick="loadPublicData()">📥 Load Public Data</button>
-  <button onclick="createPage()">➕ Create Empty Page</button>
-  <button onclick="deletePageByName()">🗑 Delete Page</button>
-</div>
+<img id="photo">
+<h2 id="name"></h2>
 
-<div id="status" style="font-size:12px; margin-bottom:8px;"></div>
-<div id="pageView"></div>
+<a id="topBtn"></a>
+<a id="bottomBtn"></a>
 
 <script>
-/* ===============================
-   CONFIG
-================================ */
-const PUBLIC_DATA_URL =
-  "https://ixcreampie.github.io/iXcreamPie_Data_Public/data.json";
+async function loadData() {
+  const res = await fetch(
+    "https://ixcreampie.github.io/iXcreamPie_Data_Public/public-data.html"
+  );
+  const text = await res.text();
 
-const PAGE_SCHEMA = [
-  "Page-Name",
-  "Profile-Photo-Link",
-  "Encrypted-Email"
-];
+  const sandbox = document.createElement("iframe");
+  sandbox.style.display = "none";
+  document.body.appendChild(sandbox);
+  sandbox.contentDocument.write(text);
 
-/* ===============================
-   STATE (PERSISTENT)
-================================ */
-let pages = JSON.parse(localStorage.getItem("pages") || "[]");
-let pageUIDCounter = Number(localStorage.getItem("pageUIDCounter") || 1);
-let signupCounter  = Number(localStorage.getItem("signupCounter") || 1);
+  const data = sandbox.contentWindow.PUBLIC_DATA;
 
-function saveState(){
-  localStorage.setItem("pages", JSON.stringify(pages));
-  localStorage.setItem("pageUIDCounter", pageUIDCounter);
-  localStorage.setItem("signupCounter", signupCounter);
+  document.getElementById("photo").src = data.profile.photo;
+  document.getElementById("name").textContent = data.profile.name;
+
+  topBtn.textContent = data.profile.topButton.label;
+  topBtn.href = data.profile.topButton.link;
+
+  bottomBtn.textContent = data.profile.bottomButton.label;
+  bottomBtn.href = data.profile.bottomButton.link;
 }
-
-/* ===============================
-   UTILITIES
-================================ */
-function generatePageUID(n){
-  return "PAGE-" + String(n).padStart(5,"0");
-}
-
-function encryptEmail(email, key){
-  return btoa(email + "::" + key);
-}
-
-function setStatus(msg){
-  document.getElementById("status").textContent = msg;
-}
-
-/* ===============================
-   PUBLIC DATA INSERT (FIXED)
-================================ */
-async function loadPublicData(){
-  setStatus("Loading public data…");
-
-  try {
-    const res = await fetch(PUBLIC_DATA_URL, { cache:"no-store" });
-    if(!res.ok) throw new Error("Fetch failed");
-
-    const data = await res.json();
-    ingestPublicData(data);
-
-    setStatus("✅ Public data inserted");
-  } catch (e) {
-    console.error(e);
-    setStatus("❌ Failed to load public data");
-  }
-}
-
-function ingestPublicData(data){
-  if(!Array.isArray(data)) return;
-
-  data.forEach(entry => {
-    if(!entry.name) return;
-
-    let page = pages.find(p => p.name === entry.name);
-
-    /* UPDATE EXISTING PAGE */
-    if(page){
-      page.rows.forEach(r => {
-        if(r.label === "Profile-Photo-Link") r.value = entry.photo || r.value;
-        if(r.label === "Encrypted-Email")
-          r.value = encryptEmail(entry.email || "", page.uid);
-        if(r.label === "Page-Name") r.value = page.name;
-      });
-      return;
-    }
-
-    /* CREATE NEW PAGE */
-    const uid = generatePageUID(pageUIDCounter++);
-    const rows = PAGE_SCHEMA.map(label => {
-      let value = "";
-      if(label === "Page-Name") value = entry.name;
-      if(label === "Profile-Photo-Link") value = entry.photo || "";
-      if(label === "Encrypted-Email")
-        value = encryptEmail(entry.email || "", uid);
-      return { label, value };
-    });
-
-    pages.push({
-      id: uid,
-      uid,
-      name: entry.name,
-      signUpIndex: signupCounter++,
-      rows
-    });
-  });
-
-  saveState();
-  renderPages();
-}
-
-/* ===============================
-   PAGE ACTIONS
-================================ */
-function createPage(){
-  const uid = generatePageUID(pageUIDCounter++);
-  pages.push({
-    id: uid,
-    uid,
-    name: uid,
-    signUpIndex: signupCounter++,
-    rows: PAGE_SCHEMA.map(l => ({ label:l, value:"" }))
-  });
-  saveState();
-  renderPages();
-}
-
-function deletePageByName(){
-  const name = prompt("Page name?");
-  if(!name) return;
-  pages = pages.filter(p => p.name !== name);
-  saveState();
-  renderPages();
-}
-
-/* ===============================
-   RENDER
-================================ */
-function renderPages(){
-  const view = document.getElementById("pageView");
-  view.innerHTML = "";
-
-  pages.forEach(page => {
-    const div = document.createElement("div");
-    div.className = "page";
-
-    page.rows.forEach(r => {
-      if(r.label === "Page-Name") r.value = page.name;
-    });
-
-    div.innerHTML = `
-      <strong>${page.name}</strong>
-      <pre>${page.rows.map(r => `${r.label}: ${r.value}`).join("\n")}</pre>
-    `;
-    view.appendChild(div);
-  });
-}
-
-renderPages();
+loadData();
 </script>
 
 </body>
