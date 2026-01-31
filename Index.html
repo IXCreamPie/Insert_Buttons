@@ -2,213 +2,179 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Public Data Page Manager</title>
+  <title>Insert Buttons</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
-    body {
-      font-family: system-ui, monospace;
-      background: #fafafa;
-      padding: 12px;
-    }
-    button {
-      cursor: pointer;
-    }
+    body { font-family: system-ui, monospace; background:#fafafa; padding:12px; }
+    button { cursor:pointer; }
+    .page { background:#fff; border:1px solid #ccc; padding:8px; margin-bottom:8px; }
   </style>
 </head>
 <body>
 
-  <!-- CONTROLS -->
-  <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
-    <button onclick="loadPublicData()">📥 Load Public Data</button>
-    <button onclick="createPage()">➕ Create Empty Page</button>
-    <button onclick="deletePageByName()">🗑 Delete Page</button>
-  </div>
+<!-- CONTROLS -->
+<div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+  <button onclick="loadPublicData()">📥 Load Public Data</button>
+  <button onclick="createPage()">➕ Create Empty Page</button>
+  <button onclick="deletePageByName()">🗑 Delete Page</button>
+</div>
 
-  <!-- STATUS -->
-  <div id="status" style="font-family:monospace; font-size:12px; margin-bottom:8px;"></div>
+<div id="status" style="font-size:12px; margin-bottom:8px;"></div>
+<div id="pageView"></div>
 
-  <!-- PAGE OUTPUT -->
-  <div id="pageView"></div>
+<script>
+/* ===============================
+   CONFIG
+================================ */
+const PUBLIC_DATA_URL =
+  "https://ixcreampie.github.io/iXcreamPie_Data_Public/data.json";
 
-  <!-- ===============================
-       GLOBAL STATE
-  ================================= -->
-  <script>
-    const PAGE_SCHEMA = [
-      "Page-Name",
-      "Profile-Photo-Link",
-      "Encrypted-Email"
-    ];
+const PAGE_SCHEMA = [
+  "Page-Name",
+  "Profile-Photo-Link",
+  "Encrypted-Email"
+];
 
-    const PUBLIC_DATA_URL =
-      "https://ixcreampie.github.io/iXcreamPie_Data_Public/data.json";
+/* ===============================
+   STATE (PERSISTENT)
+================================ */
+let pages = JSON.parse(localStorage.getItem("pages") || "[]");
+let pageUIDCounter = Number(localStorage.getItem("pageUIDCounter") || 1);
+let signupCounter  = Number(localStorage.getItem("signupCounter") || 1);
 
-    let pages = [];
-    let pageUIDCounter = 1;
-    let signupCounter = 1;
-  </script>
+function saveState(){
+  localStorage.setItem("pages", JSON.stringify(pages));
+  localStorage.setItem("pageUIDCounter", pageUIDCounter);
+  localStorage.setItem("signupCounter", signupCounter);
+}
 
-  <!-- ===============================
-       UTILITIES
-  ================================= -->
-  <script>
-    function generatePageUID(n) {
-      return "PAGE-" + String(n).padStart(5, "0");
-    }
+/* ===============================
+   UTILITIES
+================================ */
+function generatePageUID(n){
+  return "PAGE-" + String(n).padStart(5,"0");
+}
 
-    function getActiveSalt() {
-      return "static-salt";
-    }
+function encryptEmail(email, key){
+  return btoa(email + "::" + key);
+}
 
-    function scrambleKey(str) {
-      return btoa(str).slice(0, 12);
-    }
+function setStatus(msg){
+  document.getElementById("status").textContent = msg;
+}
 
-    function encryptEmail(email, key) {
-      return btoa(email + "::" + key);
-    }
+/* ===============================
+   PUBLIC DATA INSERT (FIXED)
+================================ */
+async function loadPublicData(){
+  setStatus("Loading public data…");
 
-    function saveState() {
-      localStorage.setItem("pages", JSON.stringify(pages));
-    }
+  try {
+    const res = await fetch(PUBLIC_DATA_URL, { cache:"no-store" });
+    if(!res.ok) throw new Error("Fetch failed");
 
-    function loadState() {
-      const saved = localStorage.getItem("pages");
-      if (saved) pages = JSON.parse(saved);
-    }
-  </script>
+    const data = await res.json();
+    ingestPublicData(data);
 
-  <!-- ===============================
-       STATUS
-  ================================= -->
-  <script>
-    function setStatus(msg) {
-      document.getElementById("status").textContent = msg;
-    }
-  </script>
+    setStatus("✅ Public data inserted");
+  } catch (e) {
+    console.error(e);
+    setStatus("❌ Failed to load public data");
+  }
+}
 
-  <!-- ===============================
-       PUBLIC DATA FETCH
-  ================================= -->
-  <script>
-    async function loadPublicData(){
-      setStatus("Loading public data…");
+function ingestPublicData(data){
+  if(!Array.isArray(data)) return;
 
-      try {
-        const res = await fetch(PUBLIC_DATA_URL, { cache: "no-store" });
-        if (!res.ok) throw new Error("Fetch failed");
+  data.forEach(entry => {
+    if(!entry.name) return;
 
-        const data = await res.json();
-        ingestPublicData(data);
+    let page = pages.find(p => p.name === entry.name);
 
-        setStatus("✅ Public data loaded");
-      } catch (e) {
-        console.error(e);
-        setStatus("❌ Failed to load public data");
-      }
-    }
-
-    function ingestPublicData(data){
-      if (!Array.isArray(data)) {
-        console.warn("Expected array, got:", data);
-        return;
-      }
-
-      data.forEach(entry => {
-        const uid = generatePageUID(pageUIDCounter++);
-        const signUp = signupCounter++;
-
-        const rows = PAGE_SCHEMA.map(label => {
-          let value = "";
-
-          if (label === "Page-Name") value = entry.name || uid;
-          if (label === "Profile-Photo-Link") value = entry.photo || "";
-          if (label === "Encrypted-Email" && entry.email) {
-            value = encryptEmail(
-              entry.email,
-              scrambleKey(getActiveSalt() + uid)
-            );
-          }
-
-          return { label, value };
-        });
-
-        pages.push({
-          id: uid,
-          uid,
-          name: entry.name || uid,
-          signUpIndex: signUp,
-          rows
-        });
+    /* UPDATE EXISTING PAGE */
+    if(page){
+      page.rows.forEach(r => {
+        if(r.label === "Profile-Photo-Link") r.value = entry.photo || r.value;
+        if(r.label === "Encrypted-Email")
+          r.value = encryptEmail(entry.email || "", page.uid);
+        if(r.label === "Page-Name") r.value = page.name;
       });
-
-      saveState();
-      renderPages();
-    }
-  </script>
-
-  <!-- ===============================
-       PAGE MANAGEMENT
-  ================================= -->
-  <script>
-    function createPage(){
-      const uid = generatePageUID(pageUIDCounter++);
-      pages.push({
-        id: uid,
-        uid,
-        name: uid,
-        signUpIndex: signupCounter++,
-        rows: PAGE_SCHEMA.map(label => ({ label, value: "" }))
-      });
-
-      saveState();
-      renderPages();
+      return;
     }
 
-    function deletePageByName(){
-      const name = prompt("Enter Page Name to delete:");
-      if (!name) return;
+    /* CREATE NEW PAGE */
+    const uid = generatePageUID(pageUIDCounter++);
+    const rows = PAGE_SCHEMA.map(label => {
+      let value = "";
+      if(label === "Page-Name") value = entry.name;
+      if(label === "Profile-Photo-Link") value = entry.photo || "";
+      if(label === "Encrypted-Email")
+        value = encryptEmail(entry.email || "", uid);
+      return { label, value };
+    });
 
-      pages = pages.filter(p => p.name !== name);
-      saveState();
-      renderPages();
-    }
-  </script>
+    pages.push({
+      id: uid,
+      uid,
+      name: entry.name,
+      signUpIndex: signupCounter++,
+      rows
+    });
+  });
 
-  <!-- ===============================
-       RENDER
-  ================================= -->
-  <script>
-    function renderPages(){
-      const container = document.getElementById("pageView");
-      container.innerHTML = "";
+  saveState();
+  renderPages();
+}
 
-      pages.forEach(page => {
-        const div = document.createElement("div");
-        div.style.border = "1px solid #ccc";
-        div.style.padding = "8px";
-        div.style.marginBottom = "8px";
-        div.style.background = "#fff";
+/* ===============================
+   PAGE ACTIONS
+================================ */
+function createPage(){
+  const uid = generatePageUID(pageUIDCounter++);
+  pages.push({
+    id: uid,
+    uid,
+    name: uid,
+    signUpIndex: signupCounter++,
+    rows: PAGE_SCHEMA.map(l => ({ label:l, value:"" }))
+  });
+  saveState();
+  renderPages();
+}
 
-        div.innerHTML = `
-          <strong>${page.name}</strong>
-          <pre style="font-size:11px; white-space:pre-wrap;">
-${page.rows.map(r => `${r.label}: ${r.value}`).join("\n")}
-          </pre>
-        `;
+function deletePageByName(){
+  const name = prompt("Page name?");
+  if(!name) return;
+  pages = pages.filter(p => p.name !== name);
+  saveState();
+  renderPages();
+}
 
-        container.appendChild(div);
-      });
-    }
-  </script>
+/* ===============================
+   RENDER
+================================ */
+function renderPages(){
+  const view = document.getElementById("pageView");
+  view.innerHTML = "";
 
-  <!-- ===============================
-       INITIALIZE
-  ================================= -->
-  <script>
-    loadState();
-    renderPages();
-  </script>
+  pages.forEach(page => {
+    const div = document.createElement("div");
+    div.className = "page";
+
+    page.rows.forEach(r => {
+      if(r.label === "Page-Name") r.value = page.name;
+    });
+
+    div.innerHTML = `
+      <strong>${page.name}</strong>
+      <pre>${page.rows.map(r => `${r.label}: ${r.value}`).join("\n")}</pre>
+    `;
+    view.appendChild(div);
+  });
+}
+
+renderPages();
+</script>
 
 </body>
 </html>
