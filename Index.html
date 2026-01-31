@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Public Data Page Manager</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      font-family: system-ui, monospace;
+      background: #fafafa;
+      padding: 12px;
+    }
+    button {
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- CONTROLS -->
+  <div style="display:flex; flex-wrap:wrap; gap:8px; margin-bottom:12px;">
+    <button onclick="loadPublicData()">📥 Load Public Data</button>
+    <button onclick="createPage()">➕ Create Empty Page</button>
+    <button onclick="deletePageByName()">🗑 Delete Page</button>
+  </div>
+
+  <!-- STATUS -->
+  <div id="status" style="font-family:monospace; font-size:12px; margin-bottom:8px;"></div>
+
+  <!-- PAGE OUTPUT -->
+  <div id="pageView"></div>
+
+  <!-- ===============================
+       GLOBAL STATE
+  ================================= -->
+  <script>
+    const PAGE_SCHEMA = [
+      "Page-Name",
+      "Profile-Photo-Link",
+      "Encrypted-Email"
+    ];
+
+    const PUBLIC_DATA_URL =
+      "https://ixcreampie.github.io/iXcreamPie_Data_Public/data.json";
+
+    let pages = [];
+    let pageUIDCounter = 1;
+    let signupCounter = 1;
+  </script>
+
+  <!-- ===============================
+       UTILITIES
+  ================================= -->
+  <script>
+    function generatePageUID(n) {
+      return "PAGE-" + String(n).padStart(5, "0");
+    }
+
+    function getActiveSalt() {
+      return "static-salt";
+    }
+
+    function scrambleKey(str) {
+      return btoa(str).slice(0, 12);
+    }
+
+    function encryptEmail(email, key) {
+      return btoa(email + "::" + key);
+    }
+
+    function saveState() {
+      localStorage.setItem("pages", JSON.stringify(pages));
+    }
+
+    function loadState() {
+      const saved = localStorage.getItem("pages");
+      if (saved) pages = JSON.parse(saved);
+    }
+  </script>
+
+  <!-- ===============================
+       STATUS
+  ================================= -->
+  <script>
+    function setStatus(msg) {
+      document.getElementById("status").textContent = msg;
+    }
+  </script>
+
+  <!-- ===============================
+       PUBLIC DATA FETCH
+  ================================= -->
+  <script>
+    async function loadPublicData(){
+      setStatus("Loading public data…");
+
+      try {
+        const res = await fetch(PUBLIC_DATA_URL, { cache: "no-store" });
+        if (!res.ok) throw new Error("Fetch failed");
+
+        const data = await res.json();
+        ingestPublicData(data);
+
+        setStatus("✅ Public data loaded");
+      } catch (e) {
+        console.error(e);
+        setStatus("❌ Failed to load public data");
+      }
+    }
+
+    function ingestPublicData(data){
+      if (!Array.isArray(data)) {
+        console.warn("Expected array, got:", data);
+        return;
+      }
+
+      data.forEach(entry => {
+        const uid = generatePageUID(pageUIDCounter++);
+        const signUp = signupCounter++;
+
+        const rows = PAGE_SCHEMA.map(label => {
+          let value = "";
+
+          if (label === "Page-Name") value = entry.name || uid;
+          if (label === "Profile-Photo-Link") value = entry.photo || "";
+          if (label === "Encrypted-Email" && entry.email) {
+            value = encryptEmail(
+              entry.email,
+              scrambleKey(getActiveSalt() + uid)
+            );
+          }
+
+          return { label, value };
+        });
+
+        pages.push({
+          id: uid,
+          uid,
+          name: entry.name || uid,
+          signUpIndex: signUp,
+          rows
+        });
+      });
+
+      saveState();
+      renderPages();
+    }
+  </script>
+
+  <!-- ===============================
+       PAGE MANAGEMENT
+  ================================= -->
+  <script>
+    function createPage(){
+      const uid = generatePageUID(pageUIDCounter++);
+      pages.push({
+        id: uid,
+        uid,
+        name: uid,
+        signUpIndex: signupCounter++,
+        rows: PAGE_SCHEMA.map(label => ({ label, value: "" }))
+      });
+
+      saveState();
+      renderPages();
+    }
+
+    function deletePageByName(){
+      const name = prompt("Enter Page Name to delete:");
+      if (!name) return;
+
+      pages = pages.filter(p => p.name !== name);
+      saveState();
+      renderPages();
+    }
+  </script>
+
+  <!-- ===============================
+       RENDER
+  ================================= -->
+  <script>
+    function renderPages(){
+      const container = document.getElementById("pageView");
+      container.innerHTML = "";
+
+      pages.forEach(page => {
+        const div = document.createElement("div");
+        div.style.border = "1px solid #ccc";
+        div.style.padding = "8px";
+        div.style.marginBottom = "8px";
+        div.style.background = "#fff";
+
+        div.innerHTML = `
+          <strong>${page.name}</strong>
+          <pre style="font-size:11px; white-space:pre-wrap;">
+${page.rows.map(r => `${r.label}: ${r.value}`).join("\n")}
+          </pre>
+        `;
+
+        container.appendChild(div);
+      });
+    }
+  </script>
+
+  <!-- ===============================
+       INITIALIZE
+  ================================= -->
+  <script>
+    loadState();
+    renderPages();
+  </script>
+
+</body>
+</html>
